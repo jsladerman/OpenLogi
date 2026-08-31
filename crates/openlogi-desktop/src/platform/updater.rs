@@ -20,9 +20,12 @@ use openlogi_core::config::AppSettings;
 
 use crate::state::AppState;
 
+// Fork default: this build updates from jsladerman/OpenLogi's GitHub
+// releases, never upstream's update channel. Publish a release with a
+// `latest.json` asset (`cargo xtask release latest-json`) to serve it.
 const MANIFEST_URL: &str = match option_env!("OPENLOGI_UPDATE_MANIFEST_URL") {
     Some(url) => url,
-    None => "https://updates.openlogi.org/channels/stable/latest.json",
+    None => "https://github.com/jsladerman/OpenLogi/releases/latest/download/latest.json",
 };
 
 /// Base64 minisign public key, embedded at build time by the release workflow.
