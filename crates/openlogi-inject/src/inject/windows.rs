@@ -146,6 +146,10 @@ fn dispatch_native(native: NativeAction) {
         NativeAction::Sleep => {
             tracing::debug!("Sleep has no Windows synthesis yet — action skipped");
         }
+        // Smart Zoom is a macOS-only gesture with no Windows counterpart.
+        NativeAction::SmartZoom => {
+            tracing::debug!("Smart Zoom has no Windows equivalent — action skipped");
+        }
     }
 }
 

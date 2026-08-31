@@ -145,10 +145,12 @@ fn dispatch_native(action: &Action, native: NativeAction) {
     let alt = KeyCode::KEY_LEFTALT;
     match native {
         // No universal Linux equivalent; the compositor shortcut varies.
+        // Smart Zoom is a macOS-only gesture with no Linux counterpart.
         NativeAction::MissionControl
         | NativeAction::AppExpose
         | NativeAction::ShowDesktop
-        | NativeAction::LaunchpadShow => {
+        | NativeAction::LaunchpadShow
+        | NativeAction::SmartZoom => {
             tracing::debug!(
                 action = action.label(),
                 "no Linux equivalent — action skipped"

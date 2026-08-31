@@ -1,6 +1,6 @@
 //! A platform-neutral synthesis IR.
 //!
-//! [`Action`] has one variant per user-facing behaviour (52 of them), but the
+//! [`Action`] has one variant per user-facing behaviour (54 of them), but the
 //! three `openlogi-inject` backends don't care about most of that
 //! granularity — they care about *mechanism*: "press this chord", "click
 //! this mouse button", "fire this media key", "there is no portable way to
@@ -191,6 +191,9 @@ pub enum NativeAction {
     CaptureRegion,
     /// Put the computer to sleep.
     Sleep,
+    /// Smart Zoom — the macOS trackpad two-finger double-tap, zooming the
+    /// content under the pointer. No equivalent on Linux or Windows.
+    SmartZoom,
 }
 
 /// A power-user scripting escape hatch, borrowed from the originating
@@ -252,6 +255,7 @@ impl Action {
             Action::Screenshot => Effect::Native(NativeAction::Screenshot),
             Action::CaptureRegion => Effect::Native(NativeAction::CaptureRegion),
             Action::Sleep => Effect::Native(NativeAction::Sleep),
+            Action::SmartZoom => Effect::Native(NativeAction::SmartZoom),
 
             Action::PlayPause => Effect::Media(MediaKey::PlayPause),
             Action::NextTrack => Effect::Media(MediaKey::NextTrack),

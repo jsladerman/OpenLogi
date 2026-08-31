@@ -187,6 +187,11 @@ pub enum Action {
     /// cancellation and shutdown. Dispatchers without a release context must
     /// degrade this action to a balanced tap rather than leave keys held.
     HoldShortcut(KeyCombo),
+    /// macOS Smart Zoom: the trackpad two-finger double-tap, zooming the
+    /// content under the pointer in apps that support it (Safari, Preview,
+    /// Maps). Synthesised as a WindowServer gesture event; a debug-logged
+    /// no-op on other platforms, which have no equivalent.
+    SmartZoom,
 }
 
 /// One step in a [`Action::Workflow`]. A workflow is a `Vec<WorkflowStep>`
@@ -263,6 +268,7 @@ macro_rules! for_each_unit_action {
             NextDesktop "Next Desktop" "actions.next_desktop" Navigation NextDesktop,
             ShowDesktop "Show Desktop" "actions.show_desktop" Navigation Monitor,
             LaunchpadShow "Launchpad" "actions.launchpad" Navigation Applications,
+            SmartZoom "Smart Zoom" "actions.smart_zoom" Navigation Search,
             // System
             None "Do Nothing" "pointer.do_nothing" System Ban,
             LockScreen "Lock Screen" "actions.lock_screen" System Lock,

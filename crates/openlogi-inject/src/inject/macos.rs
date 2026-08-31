@@ -144,7 +144,36 @@ fn dispatch_native(native: NativeAction) {
         // synthesised power key), so ask powermanagement directly. `pmset
         // sleepnow` works for the console user without privileges.
         NativeAction::Sleep => sleep_system(),
+        NativeAction::SmartZoom => smart_zoom(),
     }
+}
+
+/// Synthesise a macOS Smart Zoom (the trackpad two-finger double-tap).
+///
+/// There is no keyboard chord and no Dock notification for it; the only
+/// route is the WindowServer gesture event AppKit turns into
+/// `smartMagnifyWithEvent:` — a gesture-typed CGEvent whose HID subtype is
+/// zoom-toggle. `core-graphics` can only stamp the public `CGEventType`
+/// variants onto an event, but `objc2-core-graphics` models `CGEventType`
+/// and `CGEventField` as open newtypes, so the gesture discriminants (from
+/// CGEventTypes.h / IOHIDEventTypes.h, private but stable) need no raw FFI.
+fn smart_zoom() {
+    use objc2_core_graphics::{
+        CGEvent as Cg2Event, CGEventField, CGEventTapLocation as Cg2TapLocation,
+        CGEventType as Cg2EventType,
+    };
+
+    const GESTURE_EVENT_TYPE: Cg2EventType = Cg2EventType(29); // NSEventTypeGesture
+    const GESTURE_HID_TYPE_FIELD: CGEventField = CGEventField(110); // kCGEventGestureHIDType
+    const HID_GESTURE_ZOOM_TOGGLE: i64 = 22; // kIOHIDEventTypeZoomToggle
+
+    let Some(event) = Cg2Event::new(None) else {
+        tracing::warn!("CGEventCreate failed for smart zoom");
+        return;
+    };
+    Cg2Event::set_type(Some(&event), GESTURE_EVENT_TYPE);
+    Cg2Event::set_integer_value_field(Some(&event), GESTURE_HID_TYPE_FIELD, HID_GESTURE_ZOOM_TOGGLE);
+    Cg2Event::post(Cg2TapLocation::HIDEventTap, Some(&event));
 }
 
 fn nx_key(key: MediaKey) -> i32 {
