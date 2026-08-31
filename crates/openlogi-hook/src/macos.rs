@@ -353,10 +353,21 @@ fn modifiers_from_flags(flags: CGEventFlags) -> KeyModifiers {
     }
 }
 
+/// macOS `kVK_*` keycodes for Esc and F1–F19 — the `KeyTrigger` config
+/// vocabulary, and therefore the only keys the remapper can act on.
+const REMAPPABLE_KEYCODES: [u16; 20] = [
+    0x35, // esc
+    0x7A, 0x78, 0x63, 0x76, 0x60, 0x61, 0x62, 0x64, 0x65, 0x6D, // f1–f10
+    0x67, 0x6F, 0x69, 0x6B, 0x71, 0x6A, 0x40, 0x4F, 0x50, // f11–f19
+];
+
 /// Translate a keyboard `CGEvent` into a [`KeyEvent`]. Returns `None` for
-/// non-key event types (the mouse path handles those) and for `FlagsChanged`
+/// non-key event types (the mouse path handles those), for `FlagsChanged`
 /// (modifier state rides on the next key event via its flags; a standalone
-/// flags change carries no key of interest to the remapper).
+/// flags change carries no key of interest to the remapper), and for keys
+/// outside the remapper's Esc/F1–F19 vocabulary — mirroring the Windows
+/// hook's `mac_keycode` filter, so ordinary typing never crosses the crate
+/// boundary.
 fn translate_key(etype: CGEventType, event: &CGEvent) -> Option<KeyEvent> {
     let pressed = match etype {
         CGEventType::KeyDown => true,
@@ -366,6 +377,9 @@ fn translate_key(etype: CGEventType, event: &CGEvent) -> Option<KeyEvent> {
     };
     let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
     let keycode = u16::try_from(keycode).ok()?;
+    if !REMAPPABLE_KEYCODES.contains(&keycode) {
+        return None;
+    }
     Some(KeyEvent {
         keycode,
         pressed,
@@ -1197,6 +1211,23 @@ mod tests {
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 
     use super::*;
+
+    #[test]
+    fn translate_key_rejects_keys_outside_the_remapper_vocabulary() {
+        let source = CGEventSource::new(CGEventSourceStateID::Private)
+            .expect("CGEventSourceCreate must succeed");
+        // kVK_ANSI_A (0x00): ordinary typing must not translate.
+        let a_down = CGEvent::new_keyboard_event(source.clone(), 0x00, true)
+            .expect("CGEventCreateKeyboardEvent must succeed");
+        assert!(translate_key(CGEventType::KeyDown, &a_down).is_none());
+        // kVK_F1 (0x7A): in the Esc/F1–F19 vocabulary, must translate.
+        let f1_down = CGEvent::new_keyboard_event(source, 0x7A, true)
+            .expect("CGEventCreateKeyboardEvent must succeed");
+        let translated = translate_key(CGEventType::KeyDown, &f1_down)
+            .expect("F1 is in the remapper vocabulary");
+        assert_eq!(translated.keycode, 0x7A);
+        assert!(translated.pressed);
+    }
 
     #[test]
     fn tap_callback_suppresses_normally_and_passes_through_panics() {
