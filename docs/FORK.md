@@ -23,6 +23,16 @@ Deliberately tiny so rebases stay clean:
   harmlessly until a release with a `latest.json` asset exists
   (`cargo xtask release latest-json`); in-app installs would additionally
   need a minisign keypair (not set up — updates happen by rebuilding).
+- **`fix(hook)`: sleep-safe tap watchdogs** — the CGEventTap watchdogs
+  discount uptime that passed while the watchdog thread itself was off-CPU
+  (sleep entry/exit, closed-lid dark wakes). Before this, one dark wake in a
+  hundred exited the agent with "HID tap thread stopped making progress"
+  (`elapsed_ms=2662`) and it stayed down until the next login.
+- **`fix(agent)`: supervised self-relaunch** — when launchd runs the agent
+  (the normal case), a binary update on disk exits non-zero so launchd
+  respawns it, instead of `open`-launching a successor that escapes
+  supervision. Without this, every reinstall silently produced an agent
+  nothing would restart after a crash.
 
 ## Fresh-machine build (macOS)
 
@@ -59,6 +69,18 @@ Deliberately tiny so rebases stay clean:
   bound to that signing identity and silently break this one (TN3127). Fix:
   `tccutil reset ListenEvent org.openlogi.agent`, same for `Accessibility`
   and `PostEvent`, then re-grant.
+- **The agent must be launchd's job, or nothing restarts it.** Healthy state:
+  `launchctl print gui/$(id -u)/org.openlogi.agent.service` shows
+  `state = running` and the agent's environment carries
+  `XPC_SERVICE_NAME=org.openlogi.agent.service`. If the GUI shows
+  "the agent is not running" and `launchctl kickstart` says
+  *Could not find service*, the `SMAppService` registration exists in
+  Background Task Management but never reached launchd (seen after the
+  stale-identity mess above). Force the re-register dance:
+  `rm ~/.local/share/openlogi/registration-version` and relaunch the app —
+  it unregisters, registers, and kickstarts the service. An agent started by
+  hand with `open -g -n …` works but is unsupervised; quit it and kickstart
+  the service instead.
 - **Logi Options+ can't coexist** — it holds the HID++ devices exclusively.
   Stop `com.logi.cp-dev-mgr` (launchctl) or uninstall it first. Its
   uninstaller/AppCleaner leave behind `/Library/Application Support/Logi`,
@@ -90,5 +112,8 @@ git rebase upstream/master               # the three carried commits are small a
 cargo run -p xtask -- macos package && ditto target/release/bundle/osx/OpenLogi.app /Applications/OpenLogi.app
 ```
 
-Same signing cert ⇒ permission grants survive the reinstall; just restart
-the app (the agent picks up the new binary itself).
+Same signing cert ⇒ permission grants survive the reinstall. The running
+agent notices the new binary on disk and, being launchd's job, exits so
+launchd respawns it; confirm with the `launchctl print` check above (an
+agent that was *not* supervised before the update relaunches itself via
+`open` and stays unsupervised — quit it and kickstart the service).
