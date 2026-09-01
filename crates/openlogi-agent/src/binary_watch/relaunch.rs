@@ -8,11 +8,17 @@
 //!   the pid, the singleton lock, and the IPC socket.
 //! - **macOS** cannot: after `exec` the new program continues on the calling
 //!   thread, while AppKit insists the status item be created from the process
-//!   main thread. So it schedules a detached successor and exits, and the
-//!   successor waits for this process to release the singleton lock. Going
+//!   main thread. When launchd supervises this process (the registered
+//!   `SMAppService` job, `KeepAlive = {SuccessfulExit: false}`), it exits
+//!   non-zero and launchd respawns the binary now on disk under the same
+//!   supervision. Otherwise it schedules a detached successor and exits, and
+//!   the successor waits for this process to release the singleton lock. Going
 //!   through LaunchServices (`open`) rather than spawning the binary directly
 //!   is what preserves the helper's TCC identity — see
-//!   `.claude/rules/objc-ffi.md` and the permissions skill.
+//!   `.claude/rules/objc-ffi.md` and the permissions skill. A supervised agent
+//!   must never take that second path: a successor `open` starts is a
+//!   LaunchServices process, not the launchd job, so nothing respawns it when
+//!   it dies.
 //! - **Windows** has no `exec` at all: it exits and lets the GUI's socket-down
 //!   spawn (or the next login) start the replacement.
 //!
@@ -105,8 +111,41 @@ fn schedule_macos_relaunch(path: &Path) -> std::io::Result<()> {
     command.spawn().map(|_| ())
 }
 
+/// Exit status handed to launchd when this process is its supervised job.
+/// `KeepAlive = {SuccessfulExit: false}` respawns on any non-zero status;
+/// `EX_TEMPFAIL` ("temporary failure, try again") is the one that says what
+/// this exit means, and it is distinct from the hook's freeze-hazard 78.
+#[cfg(target_os = "macos")]
+const SUPERVISED_RELAUNCH_EXIT_CODE: i32 = 75;
+
+/// Whether launchd started this process as the agent's registered service.
+///
+/// launchd stamps every job it starts with `XPC_SERVICE_NAME` set to the
+/// job's label; a LaunchServices launch (`open`, a login-item start, an older
+/// agent's successor) carries an `application.…` name instead. The overlay
+/// helper inherits the agent's environment, so this is only meaningful about
+/// the process asking for itself.
+#[cfg(target_os = "macos")]
+fn supervised_by_launchd() -> bool {
+    use openlogi_core::brand::{AGENT_SERVICE_LABEL, dev_id};
+    let label = if openlogi_core::paths::is_dev_profile() {
+        dev_id(AGENT_SERVICE_LABEL)
+    } else {
+        AGENT_SERVICE_LABEL.to_owned()
+    };
+    std::env::var_os("XPC_SERVICE_NAME").is_some_and(|name| name == label.as_str())
+}
+
 #[cfg(target_os = "macos")]
 fn schedule_macos_relaunch_and_exit(path: &Path) -> std::io::Result<()> {
+    if supervised_by_launchd() {
+        info!("launchd supervises this agent — exiting so it respawns the binary now on disk");
+        #[expect(
+            clippy::exit,
+            reason = "launchd's KeepAlive is the respawner; a successor this process spawned itself would run unsupervised"
+        )]
+        std::process::exit(SUPERVISED_RELAUNCH_EXIT_CODE);
+    }
     schedule_macos_relaunch(path)?;
     #[expect(
         clippy::exit,
