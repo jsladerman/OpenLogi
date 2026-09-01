@@ -44,8 +44,9 @@ use crate::{
     TapLocation,
 };
 use watchdog::{
-    CallbackActivity, LifecycleDecision, LifecycleExitReason, LifecycleObservation,
-    LifecycleWatchdog, RearmBudget, TapPhase, WatchdogSignals, stuck_callback,
+    CALLBACK_WATCHDOG_POLL_INTERVAL, CallbackActivity, CallbackWatchdog,
+    LIFECYCLE_WATCHDOG_POLL_INTERVAL, LifecycleDecision, LifecycleExitReason, LifecycleObservation,
+    LifecycleWatchdog, RearmBudget, StuckCallback, TapPhase, WatchdogSignals,
 };
 
 /// Everything `Hook` needs to control the background thread.
@@ -589,8 +590,6 @@ fn line_scroll_delta(event: &CGEvent, axis: ScrollAxisFields) -> f64 {
     event.get_integer_value_field(axis.line) as f64
 }
 
-const CALLBACK_WATCHDOG_POLL_INTERVAL: Duration = Duration::from_millis(20);
-const LIFECYCLE_WATCHDOG_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const FREEZE_HAZARD_EXIT_CODE: i32 = 78;
 
 /// Event types the HID tap observes. Pointer *Dragged variants are required
@@ -850,16 +849,18 @@ fn spawn_callback_watchdog(
     thread::Builder::new()
         .name("openlogi-hook-watchdog".into())
         .spawn(move || {
+            let mut watchdog = CallbackWatchdog::default();
             loop {
                 let phase = signals.phase();
                 if matches!(phase, TapPhase::TapStopped | TapPhase::ThreadExited) {
                     return;
                 }
                 thread::sleep(CALLBACK_WATCHDOG_POLL_INTERVAL);
-                let Some(entered) = callback_activity.entered_at_ms() else {
-                    continue;
-                };
-                let Some(elapsed) = stuck_callback(signals.now_millis(), entered) else {
+                let Some(StuckCallback {
+                    entered_at_ms: entered,
+                    elapsed,
+                }) = watchdog.evaluate(signals.now_millis(), callback_activity.entered_at_ms())
+                else {
                     continue;
                 };
                 // Re-sample: a fresh high-frequency event may have rewritten
